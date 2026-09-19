@@ -1,0 +1,14 @@
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+xgboost>=2.0
+matplotlib>=3.8
+seaborn>=0.13
+streamlit>=1.36
+joblib>=1.4
+openpyxl>=3.1
+xlrd>=2.0
+jupyter>=1.0
+plotly>=5.22
+ucimlrepo>=0.0.7
+pyarrow>=16.0
