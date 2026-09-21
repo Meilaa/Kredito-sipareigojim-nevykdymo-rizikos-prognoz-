@@ -1,6 +1,8 @@
 pandas>=2.2
 numpy>=1.26
+# scikit-learn: kategorijų kodavimas, metrikos, isotonic kalibravimas
 scikit-learn>=1.5
+# xgboost: tik rankinio boostingo patikrai (scripts/patikra_rankiniai.py)
 xgboost>=2.0
 matplotlib>=3.8
 seaborn>=0.13
@@ -12,3 +14,5 @@ jupyter>=1.0
 plotly>=5.22
 ucimlrepo>=0.0.7
 pyarrow>=16.0
+python-docx>=1.1
+fpdf2>=2.7

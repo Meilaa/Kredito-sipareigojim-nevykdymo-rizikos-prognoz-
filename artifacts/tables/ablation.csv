@@ -1,4 +1,4 @@
 variant,dropped,val_pr_auc,test_pr_auc,test_brier,test_cost,params
-visi požymiai,—,0.5680265537040708,0.5624090125550625,0.178843159204374,3298.0,"{'n_estimators': 150, 'max_depth': 3, 'learning_rate': 0.05, 'min_child_weight': 5}"
-be demografijos,"SEX, EDUCATION, MARRIAGE, AGE",0.5698969864946177,0.5526988804150755,0.17375459805008336,3045.0,"{'n_estimators': 250, 'max_depth': 5, 'learning_rate': 0.05, 'min_child_weight': 1}"
-be mokėjimų būsenų,"PAY_1, PAY_2, PAY_3, PAY_4, PAY_5, PAY_6",0.4713228456760906,0.4460834546240825,0.19736259422334224,3129.0,"{'n_estimators': 250, 'max_depth': 5, 'learning_rate': 0.05, 'min_child_weight': 1}"
+visi požymiai,—,0.5695179973978052,0.5617095804843262,0.17688770771973755,3224.0,"{'n_estimators': 400, 'max_depth': 4, 'learning_rate': 0.03, 'min_child_weight': 20, 'n_binu': 128}"
+be demografijos,"SEX, EDUCATION, MARRIAGE, AGE",0.5695975415975021,0.5565612794789978,0.17750399324110525,3230.0,"{'n_estimators': 400, 'max_depth': 4, 'learning_rate': 0.03, 'min_child_weight': 20, 'n_binu': 128}"
+be mokėjimų būsenų,"PAY_1, PAY_2, PAY_3, PAY_4, PAY_5, PAY_6",0.4762107838675393,0.4489468655601683,0.20230281981061848,3315.0,"{'n_estimators': 400, 'max_depth': 4, 'learning_rate': 0.03, 'min_child_weight': 20, 'n_binu': 128}"

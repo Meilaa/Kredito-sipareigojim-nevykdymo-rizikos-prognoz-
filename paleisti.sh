@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 if [[ ! -x .venv/bin/python ]]; then
   echo "Kuriama virtuali aplinka..."
   python3.11 -m venv .venv
-  .venv/bin/pip install -r requirements.txt
+  .venv/bin/python -m pip install -r requirements.txt
   bash scripts/ensure_libomp.sh || true
 fi
 if [[ ! -f artifacts/results.json ]]; then

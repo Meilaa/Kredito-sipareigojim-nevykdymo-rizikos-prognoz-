@@ -66,7 +66,7 @@ def page_home(results: dict) -> None:
     winner = results["winner"]
     row = next(r for r in results["summary"] if r["model"] == winner)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Laimėtojas pagal PR-AUC", winner)
+    c1.metric("Laimėtojas (pagal validavimą)", winner)
     c2.metric("PR-AUC (testas)", fmt(row["pr_auc"]))
     c3.metric("Brier score", fmt(row["brier"]))
     c4.metric("Slenkstis t", fmt(row["threshold"], 2))
@@ -79,9 +79,10 @@ def page_home(results: dict) -> None:
     )
     st.info(
         f"**Hipotezė.** {results['hypothesis']}\n\n"
-        f"**Išvada.** Testo imtyje pagal PR-AUC laimėjo **{winner}** "
-        f"(PR-AUC = {fmt(row['pr_auc'])}, Brier = {fmt(row['brier'])}). "
-        "Hiperparametrai, kalibravimas ir slenkstis parinkti tik validavimo imtyje."
+        f"**Išvada.** Pagal validavimo PR-AUC ({fmt(row['val_pr_auc_for_selection'])}) "
+        f"laimėjo **{winner}**; galutiniame teste jo PR-AUC = {fmt(row['pr_auc'])}, "
+        f"Brier = {fmt(row['brier'])}. Hiperparametrai, kalibravimas, slenkstis ir modelio "
+        "atranka atlikti tik validavimo imtyje – testas naudotas vieną kartą."
     )
 
 
@@ -130,8 +131,9 @@ def page_problem(results: dict) -> None:
     st.code(
         "UCI duomenys → kokybės patikra → stratifikuotas 70/15/15 →\n"
         "preprocessing tik pagal mokymą → bendras dažnis + logistinė regresija →\n"
-        "XGBoost + Random Forest → validavimo metrikos → kalibravimas →\n"
-        "slenksčio / kainos analizė → grupės → abliacija / atsparumas → vienkartinis testas",
+        "XGBoost + Random Forest (rankiniai) → validavimo metrikos → kalibravimas →\n"
+        "modelio atranka pagal validavimą → slenksčio / kainos analizė → grupės →\n"
+        "abliacija / atsparumas → vienkartinis testas",
         language="text",
     )
     st.subheader("Duomenų paruošimo kodas")
@@ -141,9 +143,9 @@ def page_problem(results: dict) -> None:
 def page_formulas(results: dict) -> None:
     st.header("Formulės ir jų ryšys su kodu")
     st.info(
-        "Logistinės regresijos tikimybė skaičiuojama rankine formule faile `src/formulas.py` "
-        f"ir sutampa su sklearn. Skirtumas šiame eksperimente: "
-        f"**{results['formula_check']['max_abs_diff']:.2e}**."
+        "Visi mokymo algoritmai parašyti rankiniu būdu faile `src/rankiniai_modeliai.py`. "
+        "Formulės atskirai užrašytos `src/formulas.py` ir sutampa su modelio išvestimi. "
+        f"Skirtumas šiame eksperimente: **{results['formula_check']['max_abs_diff']:.2e}**."
     )
 
     st.subheader("1. Logistinė regresija")
@@ -153,6 +155,17 @@ def page_formulas(results: dict) -> None:
         "`xᵢⱼ` – i-ojo kliento j-asis požymis po preprocessing; `β₀` – laisvasis narys "
         f"({fmt(results['logistic_extra']['intercept'])}); `βⱼ` – mokymo metu gauti koeficientai; "
         "`p̂ᵢ` – default tikimybė."
+    )
+    st.write(
+        "Koeficientai gaunami Newton–Raphson metodu, parašytu rankiniu būdu: "
+        r"$\beta \leftarrow \beta - H^{-1}g$, kur $g = X^\top(s\odot(p-y)) + \lambda\beta$ ir "
+        r"$H = X^\top \mathrm{diag}(s\odot p\odot(1-p))X + \lambda I$. "
+        f"Šiame paleidime pakako {results['logistic_extra'].get('newton_iteracijos', '—')} iteracijų."
+    )
+    rankinis = read_source("src/rankiniai_modeliai.py")
+    st.code(
+        rankinis[rankinis.index("class LogistineRegresija") : rankinis.index("def kvantiliu_briaunos")],
+        language="python",
     )
     src = read_source("src/formulas.py")
     start = src.index("def linear_score")
@@ -177,25 +190,47 @@ def page_formulas(results: dict) -> None:
     end = src.index("def expected_calibration_error")
     st.code(src[start:end], language="python")
 
-    st.subheader("Skaitiška patikra: formulė vs sklearn")
+    st.subheader("Skaitiška patikra: formulė vs modelis")
     check = results["formula_check"]
     demo = pd.DataFrame(
         {
             "z": check["z"],
             "p_formule": check["p_formula"],
-            "p_sklearn": check["p_sklearn"],
+            "p_modelio": check["p_sklearn"],
         }
     )
     st.dataframe(demo, hide_index=True, width="stretch")
     st.caption("Sutapimas rodo, kad tikimybė yra sigmoidinė transformacija σ(z), o ne atskiras neskaičiuojamas žingsnis.")
 
-    st.subheader("XGBoost taisyklė")
+    st.subheader("5. XGBoost taisyklė (rankinis gradientinis boostingas)")
     st.write(
-        "Dvejetainei klasifikacijai su `objective='binary:logistic'` galutinė tikimybė yra "
-        "ta pati sigmoidinė transformacija, tik `z` gaunamas kaip medžių suma: "
-        r"$z(x) = \sum_k f_k(x)$, $p̂ = \sigma(z)$."
+        "Boostinge galutinė tikimybė yra ta pati sigmoidinė transformacija, tik `z` gaunamas "
+        "kaip medžių suma: "
+        r"$F(x) = F_0 + \eta\sum_k medis_k(x)$, $\hat p = \sigma(F(x))$."
     )
-    st.code(read_source("src/models.py").split("def train_xgboost")[1].split("def logistic_formula_check")[0], language="python")
+    st.latex(r"g_i = s_i\,(p_i - y_i), \qquad h_i = s_i\,p_i\,(1 - p_i)")
+    st.latex(r"w = -\frac{\sum_i g_i}{\sum_i h_i + \lambda}")
+    st.write(
+        "Šios formulės parašytos rankiniu būdu faile `src/rankiniai_modeliai.py` klasėse "
+        "`GradientinisBoostingas` ir `RegresinisMedis` – jokia mokymo biblioteka jų neatlieka."
+    )
+    rank = read_source("src/rankiniai_modeliai.py")
+    start = rank.index("class GradientinisBoostingas")
+    end = rank.index("class Grandine")
+    st.code(rank[start:end], language="python")
+
+    st.subheader("6. Rankinis įgyvendinimas ir patikra")
+    patikra = load_table("rankiniu_patikra.csv")
+    if not patikra.empty:
+        st.dataframe(
+            patikra[["modelis", "pr_auc_rankinis", "pr_auc_biblioteka"]],
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(
+            "Validavimo imtis. Eksperimente naudojami tik rankiniai modeliai; bibliotekos "
+            "paleistos atskirai kaip nepriklausoma patikra (`python scripts/patikra_rankiniai.py`)."
+        )
 
 
 def page_models(results: dict) -> None:
@@ -211,13 +246,27 @@ def page_models(results: dict) -> None:
         | Metodas | Vaidmuo | Kodėl tinka |
         |---|---|---|
         | Bendras dažnis | naivus baseline | parodo minimalią atskaitos ribą |
-        | Logistinė regresija | interpretuojamas baseline | natūrali tikimybė `σ(z)` |
+        | Logistinė regresija | interpretuojamas baseline | natūrali tikimybė `σ(z)`, Newton–Raphson |
         | XGBoost | pagrindinis intelektualus | netiesiškumas ir požymių sąveikos |
         | Random Forest | alternatyva | kitas medžių ansamblis, be gradientinio klaidų taisymo |
+
+        Pavadinimai lentelėse įprasti (XGBoost, Random Forest), bet **algoritmai parašyti
+        rankiniu būdu** faile `src/rankiniai_modeliai.py` (tik `numpy`): klasės
+        `GradientinisBoostingas` ir `AtsitiktinisMiskas`. `sklearn` naudojamas kategorijų
+        kodavimui ir metrikoms, `xgboost` biblioteka – tik patikrai.
+        Laimėtojas renkamas pagal **validavimo** PR-AUC; testas skaičiuojamas vieną kartą.
         """
     )
-    st.subheader("Modelių mokymo kodas")
-    file = st.selectbox("Failas", ["src/models.py", "src/calibrate.py", "src/experiment.py"])
+    st.subheader("Algoritmų ir mokymo kodas")
+    file = st.selectbox(
+        "Failas",
+        [
+            "src/rankiniai_modeliai.py",
+            "src/models.py",
+            "src/calibrate.py",
+            "src/experiment.py",
+        ],
+    )
     st.code(read_source(file), language="python")
 
 
@@ -242,11 +291,16 @@ def _bar_figure(summary: pd.DataFrame, metric: str, title: str, y_title: str) ->
 
 def page_results(results: dict) -> None:
     st.header("Rezultatai: vienodas palyginimas")
-    summary = pd.DataFrame(results["summary"]).sort_values("pr_auc", ascending=False)
+    summary = pd.DataFrame(results["summary"]).sort_values(
+        "val_pr_auc_for_selection", ascending=False
+    )
     winner = results["winner"]
     st.write(
-        f"**{winner}** laimėjo pagal PR-AUC testo imtyje. Tai nereiškia, kad jis geriausias visomis "
-        "prasmėmis: Brier ir ECE rodo tikimybių kokybę, o `cost` – verslo kainą prie pasirinkto slenksčio."
+        f"**{winner}** laimėjo pagal **validavimo** PR-AUC – pagal ją renkamas modelis, o testo "
+        "imtis skaičiuojama vieną kartą kaip galutinis įvertis. Tai nereiškia, kad jis geriausias "
+        "visomis prasmėmis: Brier ir ECE rodo tikimybių kokybę, o `cost` – verslo kainą prie "
+        "pasirinkto slenksčio. Stulpelis `val_pr_auc_for_selection` yra atrankos metrika, "
+        "`pr_auc` – testo rezultatas."
     )
     st.dataframe(summary.drop(columns=["params"], errors="ignore"), hide_index=True, width="stretch")
     c1, c2 = st.columns(2)
@@ -262,10 +316,6 @@ def page_results(results: dict) -> None:
         )
 
     pr_fig = go.Figure()
-    for row in results["summary"]:
-        name = row["model"]
-        ev = results["test_eval"][name]["calibrated"]
-        # PR arrays were stripped from JSON; load from plot or recompute from predictions if available
     preds = load_table("test_predictions.csv")
     if not preds.empty:
         from sklearn.metrics import precision_recall_curve
@@ -548,24 +598,47 @@ def page_live(results: dict) -> None:
 
     with tab_csv:
         st.write(
-            "CSV turi turėti tuos pačius požymius kaip UCI rinkinys. "
-            "Jei yra stulpelis `default`, skaičiuojamos ir metrikos."
+            "Įkelkite CSV arba Excel su UCI požymiais. Jei yra stulpelis `default`, "
+            "skaičiuojamos ir metrikos."
         )
-        uploaded = st.file_uploader("Įkelkite CSV", type=["csv"])
+        uploaded = st.file_uploader("Įkelkite failą", type=["csv", "xlsx", "xls"])
         if uploaded is not None:
-            extra = pd.read_csv(uploaded)
+            name = uploaded.name.lower()
+            extra = pd.read_excel(uploaded) if name.endswith((".xlsx", ".xls")) else pd.read_csv(uploaded)
             from src.data import clean_categories, _normalize_columns
 
             extra = clean_categories(_normalize_columns(extra, require_target=False))
             extra = extra.copy()
             schema = joblib.load(MODELS_DIR / "schema_example.joblib")
+            present = [c for c in schema.columns if c in extra.columns]
+            missing = [c for c in schema.columns if c not in extra.columns]
             X = extra.reindex(columns=list(schema.columns), fill_value=0)
             p_raw = model.predict_proba(X)
             p_cal = calibrator.transform(p_raw)
             extra["p_raw"] = p_raw
             extra["p_cal"] = p_cal
             extra["yhat"] = decision_from_threshold(p_cal, t)
+
+            n_risk = int(extra["yhat"].sum())
+            s1, s2, s3, s4 = st.columns(4)
+            s1.metric("Klientų", len(extra))
+            s2.metric("Vidutinė p̂_cal", f"{float(np.mean(p_cal)):.3f}")
+            s3.metric(f"ŷ=1 (p̂_cal ≥ {t:.2f})", n_risk)
+            s4.metric("Atpažinti požymiai", f"{len(present)} / {len(schema.columns)}")
+            if missing:
+                st.warning(
+                    "Šių stulpelių faile nebuvo, todėl jie užpildyti 0: "
+                    + ", ".join(missing)
+                    + ". Jei trūksta PAY_* arba LIMIT_BAL, rezultatas nepatikimas."
+                )
+            else:
+                st.success("Visi modelio požymiai faile rasti.")
+
             st.dataframe(extra.head(30), hide_index=True, width="stretch")
+            st.caption(
+                "Žiūrėkite stulpelius p_cal (kalibruota tikimybė) ir yhat (1 = default rizika). "
+                "Klientas su PAY_1 ≥ 2 paprastai turi aukštesnę p_cal nei tas, kurio PAY_1 ≤ 0."
+            )
             if "default" in extra.columns:
                 y = extra["default"].astype(int).to_numpy()
                 from src.metrics import evaluate_probabilities
@@ -575,7 +648,11 @@ def page_live(results: dict) -> None:
                 k1.metric("PR-AUC", fmt(m["pr_auc"]))
                 k2.metric("Brier", fmt(m["brier"]))
                 k3.metric("FN", m["FN"])
-                k4.metric("Cost", f"{m['cost']:.0f}")
+                k4.metric("FP", m["FP"])
+                st.caption(
+                    "Jei faile yra tikroji klasė, FN = praleisti default, FP = klaidingi įtarimai. "
+                    "Mažame faile PR-AUC svyruoja; svarbu, kad jis būtų didesnis už default dažnį."
+                )
 
 
 def page_ai() -> None:

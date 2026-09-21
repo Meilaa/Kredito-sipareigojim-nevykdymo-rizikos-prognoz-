@@ -11,11 +11,14 @@ Cursor agentas (Grok 4.6) naudotas kodo struktūrai, modulių išdėstymui, Stre
 1. Sukurti galutinio egzamino sprendimą pagal Word užduotį ir kolokviumo PDF planą.
 2. Sprendimą parodyti svetainėje, kad būtų galima apsiginti darbą, įskaitant kodo dalį; galima naudoti Jupyter.
 3. Implicitūs tolesni patikslinimai: atkuriamas eksperimentas, formulės–kodo ryšys, abliacija, atsparumas, AI žurnalas.
+4. Parašyti mokymo algoritmus rankiniu būdu, kad jų neatliktų biblioteka.
 
 ## Priimti pasiūlymai
 
 - Modulinė Python grandinė, atitinkanti kolokviumo etapus: `data` → `preprocess` → `models` → `calibrate` → `metrics` / `evaluate` → `ablation`.
-- Baseline: bendras dažnis + logistinė regresija; intelektualūs metodai: XGBoost ir Random Forest.
+- Baseline: bendras dažnis + logistinė regresija; intelektualūs metodai: XGBoost tipo gradientinis boostingas ir Random Forest (pavadinimai įprasti, bet algoritmai savi).
+- Laimėtojas renkamas pagal validavimo PR-AUC; testas naudojamas vieną kartą galutiniam įverčiui.
+- Visi mokymo algoritmai parašyti rankiniu būdu (`src/rankiniai_modeliai.py`, tik `numpy`): Newton–Raphson logistinei regresijai, histogramų medžiai su g ir h boostingui, bootstrap ir Gini miškui. Bibliotekos palaikytos tik nepriklausomai patikrai (`scripts/patikra_rankiniai.py`).
 - Stratifikuotas 70/15/15; hiperparametrai ir slenkstis tik validavime.
 - Gynimo svetainė `streamlit run svetaine.py`, o ne vien Jupyter.
 - Formulės išskirtos faile `src/formulas.py` ir svetainėje rodomos šalia kodo.
@@ -23,6 +26,7 @@ Cursor agentas (Grok 4.6) naudotas kodo struktūrai, modulių išdėstymui, Stre
 
 ## Atmesti pasiūlymai
 
+- Bibliotekiniai modeliai (`sklearn`, `xgboost`) kaip pagrindinis sprendimas – jie palikti tik patikrai, nes užduočiai svarbu pačių algoritmų įgyvendinimas.
 - Cursor Canvas vietoje svetainės – tai ne gynimo demonstracija naršyklėje.
 - Tik Jupyter be svetainės – sunkiau gynime šokinėti tarp formulių, grafikų ir gyvo bandymo.
 - MLP kaip trečias intelektualus metodas šiame paleidime – plane jis buvo alternatyva; du intelektualūs metodai užtenka, o MLP jautresnis masteliui ir ilgiau mokosi.
@@ -42,7 +46,19 @@ Cursor agentas (Grok 4.6) naudotas kodo struktūrai, modulių išdėstymui, Stre
 **Kas nutiko.** `libxgboost.dylib` nerado `libomp.dylib`.  
 **Patikra.** Pakartotas `from xgboost import XGBClassifier` po `libomp` įrašymo į `xgboost/lib`. Skriptas: `scripts/ensure_libomp.sh`.
 
-### 3. Literatūros metrikų perkėlimas
+### 3. Rankinio medžio padalijimo riba
+
+**Prielaida.** Užtenka išsaugoti bino numerį, pagal kurį dalijama.  
+**Kas nutiko.** Prognozuojant naujus duomenis binų nebėra – reikia tikros požymio reikšmės. Jei riba neatitinka bino krašto, mokymo ir prognozės padalijimai išsiskiria.  
+**Patikra.** Ribos apibrėžtos taip, kad „bin ≤ b“ būtų tapatu „x < briauna[b]“; prognozė ant mokymo imties duoda tuos pačius lapus, o rezultatai sutampa su bibliotekomis (`scripts/patikra_rankiniai.py`).
+
+### 4. Laimėtojas buvo renkamas pagal testą
+
+**Prielaida.** Užtenka surikiuoti modelius pagal galutinę testo PR-AUC ir paimti pirmą.  
+**Kas nutiko.** Taip testo imtis patenka į atranką – tai nutekėjimas. Dėl to laimėtoju tapo Random Forest, nors validavime (vienintelėje leistinoje atrankos imtyje) pirmavo XGBoost.  
+**Patikra.** `src/experiment.py` dabar rikiuoja pagal `val_pr_auc_for_selection`; `results.json` turi lauką `winner_selected_by`, o 1 lentelėje rodomos abiejų imčių PR-AUC, kad skirtumą būtų galima pamatyti.
+
+### 5. Literatūros metrikų perkėlimas
 
 **Prielaida.** Straipsnyje [2] minimos XGBoost AUC ≈ 0,95 ir PR-AUC ≈ 0,89 gali būti laukiamos ir šiame UCI rinkinyje.  
 **Patikra.** DOI 10.54254/2754-1169/2025.BL29296 atidarytas; tai kitas viešas kredito rinkinys, ne būtinai UCI 30 000 klientų. Yeh ir Lien (2009) bei pakartotiniai UCI eksperimentai paprastai duoda ROC-AUC apie 0,75–0,80 ir gerokai žemesnį PR-AUC. Šio darbo skaičiai imami tik iš `python run_experiment.py`, ne iš straipsnio lentelės.

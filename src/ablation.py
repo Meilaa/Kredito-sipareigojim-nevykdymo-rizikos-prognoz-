@@ -1,4 +1,8 @@
-"""Abliacija ir atsparumo bandymai."""
+"""Abliacija ir atsparumo bandymai.
+
+Abliacijoje gradientinis boostingas mokomas iš naujo be tam tikrų požymių grupių;
+atsparumo bandymuose naudojamas jau apmokytas laimėtojas.
+"""
 
 from __future__ import annotations
 

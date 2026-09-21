@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 from fpdf import FPDF
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from report_texts import lt, surinkti  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts"
@@ -17,15 +21,6 @@ TABLES = ARTIFACTS / "tables"
 REPORTS = ROOT / "reports"
 OUT = REPORTS / "Egzamino_ataskaita.pdf"
 FONT_DIR = ROOT / ".venv/lib/python3.11/site-packages/matplotlib/mpl-data/fonts/ttf"
-
-
-def lt(value, digits: int = 4) -> str:
-    if pd.isna(value):
-        return "—"
-    if isinstance(value, (int,)) and not isinstance(value, bool):
-        return f"{value:,}".replace(",", " ")
-    text = f"{float(value):.{digits}f}"
-    return text.replace(".", ",")
 
 
 def load_results() -> dict:
@@ -55,7 +50,7 @@ def extra_plots() -> dict[str, Path]:
     fig, ax = plt.subplots(figsize=(8.2, 4.4))
     ax.bar(ab["variant"], ab["test_pr_auc"], color="#1B2A4A")
     ax.set_ylabel("PR-AUC teste")
-    ax.set_title("Abliacija: XGBoost be požymių grupių")
+    ax.set_title("Abliacija: gradientinis boostingas be požymių grupių")
     ax.grid(axis="y", alpha=0.25)
     fig.tight_layout()
     paths["ablation"] = PLOTS / "report_ablation.png"
@@ -63,10 +58,11 @@ def extra_plots() -> dict[str, Path]:
     plt.close(fig)
 
     rob = pd.read_csv(TABLES / "robustness.csv")
+    laimetojas = json.loads((ARTIFACTS / "results.json").read_text(encoding="utf-8"))["winner"]
     fig, ax = plt.subplots(figsize=(8.2, 4.4))
     ax.barh(rob["scenario"], rob["pr_auc"], color="#4C6B8A")
     ax.set_xlabel("PR-AUC")
-    ax.set_title("Atsparumo bandymai (XGBoost, kalibruotos tikimybės)")
+    ax.set_title(f"Atsparumo bandymai ({laimetojas}, kalibruotos tikimybės)")
     ax.grid(axis="x", alpha=0.25)
     fig.tight_layout()
     paths["robust"] = PLOTS / "report_robust.png"
@@ -222,6 +218,7 @@ def build() -> Path:
     profile = pd.read_csv(TABLES / "error_profile.csv")
     fn = pd.read_csv(TABLES / "fn_examples.csv")
     fp = pd.read_csv(TABLES / "fp_examples.csv")
+    T = surinkti()
     pdf = Report()
 
     # Titulinis
@@ -267,7 +264,7 @@ def build() -> Path:
             "Duomenų rinkinys: UCI Default of Credit Card Clients, https://archive.ics.uci.edu/dataset/350/default+of+credit+card+clients",
             "Prognozuojamas rezultatas: kalibruota įsipareigojimų nevykdymo tikimybė.",
             "Privalomas baseline: bendras dažnis ir logistinė regresija.",
-            "Svarstytini intelektualieji metodai: SVM, MLP, medžių ansamblis, fuzzy taisyklės. Šiame darbe pasirinkti XGBoost ir Random Forest.",
+            T["intelektualus_metodai"],
             "Pagrindinės vertinimo kryptys: PR-AUC, Brier score, kalibracija ir klaidų kaštų kreivė.",
             "Duomenų skaidymas: stratifikuotas testas; preprocessing tik mokymo imtyje.",
             "Svarbiausias probleminis aspektas: teisingumas skirtingoms grupėms ir tikimybės kalibravimas.",
@@ -277,7 +274,8 @@ def build() -> Path:
     pdf.bullet(
         [
             "Įgyvendinti duomenų paruošimo grandinę, baseline ir bent du intelektualiuosius metodus.",
-            "Bent vienam modeliui parodyti formulės ar taisyklės ryšį su konkrečia kodo vieta.",
+            "Bent vienam modeliui parodyti formulės ar taisyklės ryšį su konkrečia kodo vieta. "
+            "Šiame darbe visi mokymo algoritmai parašyti rankiniu būdu.",
             "Palyginti metodus tuo pačiu skaidymu ir tomis pačiomis metrikomis. Hiperparametrų parinkimui nenaudoti galutinio testo.",
             "Atlikti bent vieną abliaciją ir bent vieną atsparumo bandymą.",
             "Pateikti rezultatų lentelę, grafiką, klaidų pavyzdžius ir paaiškinti, kodėl metodas laimėjo.",
@@ -289,20 +287,10 @@ def build() -> Path:
     # 2. Dokumentacija
     pdf.h1("2. Sprendimo dokumentacija")
     pdf.h2("2.1. Problema")
-    pdf.body(
-        "Tikslas – pagal kredito kortelės kliento istorinius duomenis įvertinti kalibruotą "
-        "tikimybę, kad klientas kitą mėnesį nevykdys finansinių įsipareigojimų. Modelis "
-        "vertinamas kaip sprendimų palaikymo priemonė, ne automatinė galutinio kredito "
-        "sprendimo sistema. Rinkinį sudaro 30 000 klientų, iš jų 6 636 (22,12 %) priklauso "
-        "default klasei."
-    )
+    pdf.body(T["problema"])
     pdf.h2("2.2. Hipotezė")
     pdf.body(res["hypothesis"])
-    pdf.body(
-        "Išvada: hipotezė pasitvirtino. Testo imtyje XGBoost pasiekė PR-AUC 0,5430, "
-        "Random Forest – 0,5333, logistinė regresija – 0,4795, bendras dažnis – 0,2211. "
-        "Po isotonic kalibravimo XGBoost Brier score yra 0,1343, ECE – 0,0176."
-    )
+    pdf.body(T["hipotezes_isvada"])
     pdf.h2("2.3. Įvestis ir išvestis")
     pdf.body(
         "Įvestis X: LIMIT_BAL, SEX, EDUCATION, MARRIAGE, AGE, mokėjimų būsenos PAY_1–PAY_6, "
@@ -311,61 +299,53 @@ def build() -> Path:
         "kalibravimo p̂_cal, klasė ŷ = 1, jei p̂_cal ≥ t."
     )
     pdf.h2("2.4. Duomenų grandinė")
-    pdf.body(
-        "Stratifikuotas 70/15/15 skaidymas, sėkla 42. Mokymas 21 000, validavimas 4 500, "
-        "testas 4 500. EDUCATION reikšmės 0, 5, 6 sujungtos į 4; MARRIAGE 0 – į 3. "
-        "Kategorijos koduojamos OneHotEncoder, skaitiniai požymiai logistinei regresijai "
-        "standartizuojami. Visi preprocessing parametrai skaičiuojami tik mokymo imtyje."
-    )
-    pdf.code(
-        "UCI duomenys → kokybės patikra → stratifikuotas 70/15/15 →\n"
-        "preprocessing tik pagal mokymą → bendras dažnis + logistinė regresija →\n"
-        "XGBoost + Random Forest → validavimo metrikos → kalibravimas →\n"
-        "slenksčio / kainos analizė → grupės → abliacija / atsparumas → vienkartinis testas"
-    )
+    pdf.body(T["duomenu_grandine"])
+    pdf.code(T["grandines_kodas"])
     pdf.h2("2.5. Modeliai")
-    pdf.body(
-        "Naivus baseline visiems klientams priskiria mokymo imties default dažnį (0,2212). "
-        "Logistinė regresija yra interpretuojamas baseline; hiperparametras C ∈ {0,1; 1; 10} "
-        "ir class_weight parinkti pagal validavimo PR-AUC. XGBoost – pagrindinis intelektualus "
-        "metodas (n_estimators=150, max_depth=3, learning_rate=0,05). Random Forest – antroji "
-        "alternatyva (200 medžių, max_depth=8). Kalibratorius (isotonic arba Platt) mokomas "
-        "tik validavime; visiems modeliams pasirinktas isotonic."
-    )
+    pdf.body(T["modeliai"])
     pdf.h2("2.6. Formulės ir kodas")
     pdf.body("Logistinė regresija:")
     pdf.code("z_i = β0 + β1 x_i1 + … + βp x_ip\np̂_i = 1 / (1 + e^{-z_i})")
-    pdf.body(
-        "Šios formulės įgyvendintos faile src/formulas.py funkcijose linear_score ir "
-        "logistic_probability. Validavimo imties aštuoniose eilutėse rankinės tikimybės "
-        f"sutampa su sklearn iki {res['formula_check']['max_abs_diff']:.2e}."
-    )
+    pdf.body(T["formules_patikra"])
     pdf.body("Sprendimo taisyklė, Brier score ir klaidų kaina:")
     pdf.code(
         "ŷ_i = 1, kai p̂_cal,i ≥ t; kitaip ŷ_i = 0\n"
         "BS = (1/N) Σ (p̂_i − y_i)²\n"
-        "Cost(t) = C_FN · FN(t) + C_FP · FP(t),  C_FN = 5, C_FP = 1"
+        f"Cost(t) = C_FN · FN(t) + C_FP · FP(t),  C_FN = {int(res['c_fn'])}, C_FP = {int(res['c_fp'])}"
     )
-    pdf.body(
-        "XGBoost dvejetainei klasifikacijai naudoja objective='binary:logistic': "
-        "z(x) = Σ_k f_k(x), p̂ = σ(z). Slenkstis t parenkamas validavime minimizuojant Cost(t)."
+    pdf.body(T["boostingo_taisykle"])
+
+    pdf.h2("2.7. Rankinis algoritmų įgyvendinimas ir jo patikra")
+    pdf.body(T["rankinis_igyvendinimas"])
+    pdf.code(
+        "Newton–Raphson:  β ← β − H⁻¹g,  g = Xᵀ(s·(p−y)) + λβ\n"
+        "Boostingas:      g = s·(p−y),  h = s·p·(1−p),  w = −ΣG/(ΣH+λ)\n"
+        "Padalijimas:     gain = ½·[G_L²/(H_L+λ) + G_R²/(H_R+λ) − G²/(H+λ)] − γ\n"
+        "Miškas:          Gini = 1 − p₁² − p₀²,  p(x) = (1/K)·Σ_k medis_k(x)"
     )
+    pdf.body(T["patikros_tekstas"])
+    if T["patikros_eilutes"]:
+        pdf.table(
+            ["Modelis", "Rankinis PR-AUC", "Bibliotekos PR-AUC", "Skirtumas", "Sutapimas"],
+            T["patikros_eilutes"],
+            [44, 32, 34, 26, 38],
+        )
+        pdf.caption(
+            "8 lentelė. Validavimo imtis. Eksperimente naudojami tik rankiniai modeliai; "
+            "bibliotekos čia reikalingos tik kaip nepriklausoma patikra."
+        )
 
     # 3. Rezultatai
     pdf.add_page()
     pdf.h1("3. Rezultatai: metodų palyginimas")
-    pdf.body(
-        "Visi metodai lyginti tomis pačiomis imtimis. Hiperparametrai, kalibratorius ir "
-        "slenkstis parinkti nenaudojant testo. Pagrindinė diskriminacijos metrika – PR-AUC, "
-        "nes klasės nesubalansuotos. Accuracy čia klaidina: pastovus „nėra default“ duotų apie 78 %."
-    )
+    pdf.body(T["rezultatu_ivadas"])
     pdf.table(
-        ["Modelis", "PR-AUC", "ROC-AUC", "Brier", "ECE", "Cost", "t", "FN", "FP"],
+        ["Modelis", "PR-AUC val.", "PR-AUC test.", "Brier", "ECE", "Cost", "t", "FN", "FP"],
         [
             [
                 r["model"],
+                lt(r["val_pr_auc_for_selection"]),
                 lt(r["pr_auc"]),
-                lt(r["roc_auc"]),
                 lt(r["brier"]),
                 lt(r["ece"], 3),
                 lt(r["cost"], 0),
@@ -375,33 +355,19 @@ def build() -> Path:
             ]
             for _, r in summary.iterrows()
         ],
-        [36, 16, 18, 16, 14, 16, 14, 12, 12],
+        [36, 20, 20, 16, 14, 16, 12, 12, 12],
     )
-    pdf.caption(
-        "1 lentelė. Kalibruotos tikimybės, testo imtis (n = 4 500). Mažesnis Brier ir ECE – geriau."
-    )
-    pdf.body(
-        "XGBoost laimėjo pagal PR-AUC. Random Forest arti jo pagal diskriminaciją, bet "
-        "turi daugiau FP (1 475 prieš 924) ir žemesnį tikslumą prie savo slenksčio. "
-        "Logistinė regresija silpnesnė ir pagal PR-AUC, ir pagal Brier. Bendras dažnis "
-        "PR-AUC sutampa su default dažniu – tai naivi atskaitos riba."
-    )
+    pdf.caption(T["lentele1"])
+    pdf.body(T["rezultatu_komentaras"])
     pdf.figure(extra["compare"], "1 pav. PR-AUC ir Brier testo imtyje")
     pdf.figure(PLOTS / "pr_curves.png", "2 pav. Precision–Recall kreivės")
 
     pdf.add_page()
     pdf.h2("3.1. Kalibracija ir klaidų kaina")
-    pdf.body(
-        "Geras surikiavimas pagal riziką nereiškia, kad prognozuota 0,30 tikimybė atitinka "
-        "30 % įvykių. Todėl tikimybės kalibruotos isotonic regresija validavimo imtyje. "
-        "XGBoost Brier po kalibravimo sumažėjo nuo 0,175 iki 0,130 (validavime)."
-    )
+    pdf.body(T["kalibracija"])
     pdf.figure(PLOTS / "calibration.png", "3 pav. Kalibracijos kreivės testo imtyje")
-    pdf.figure(PLOTS / "cost_curve.png", "4 pav. XGBoost klaidų kainos kreivė; pasirinktas t = 0,175")
-    pdf.body(
-        "Slenkstis 0,175 pasirinktas ne pagal accuracy, o pagal Cost(t) su C_FN:C_FP = 5:1. "
-        "Žemesnis slenkstis padidintų recall, bet ir nepagrįstų ribojimų (FP) skaičių."
-    )
+    pdf.figure(PLOTS / "cost_curve.png", T["figura_kaina"])
+    pdf.body(T["slenksčio_komentaras"])
 
     pdf.h1("4. Grupės, klaidos, abliacija ir atsparumas")
     pdf.h2("4.1. Veikimas grupėse")
@@ -422,22 +388,13 @@ def build() -> Path:
         ],
         [28, 16, 28, 22, 22, 22, 22],
     )
-    pdf.caption("2 lentelė. XGBoost pagal lytį (testas). PR-AUC panašus (0,541 ir 0,546).")
+    pdf.caption(T["lentele2"])
     pdf.figure(PLOTS / "group_prauc.png", "5 pav. PR-AUC pagal lytį ir amžiaus grupę")
-    pdf.body(
-        "Amžiaus grupėje 30–39 PR-AUC žemesnis (0,493) nei 50+ (0,590). Skirtumai "
-        "neįrodo priežastinės diskriminacijos, bet demografiniai požymiai gali būti proxy. "
-        "Abliacija be demografijos PR-AUC sumažina nedaug (0,562 → 0,553, nekalibruotas "
-        "XGBoost palyginimas), todėl praktikoje demografiją galima šalinti be didelio nuostolio."
-    )
+    pdf.body(T["grupes"])
 
     pdf.add_page()
     pdf.h2("4.2. Klaidų analizė")
-    pdf.body(
-        "False negative (praleistas default) brangesnis. FN klientai vidutiniškai turi "
-        "didesnį limitą ir geresnę PAY_1 būseną nei TP – modelis juos laiko saugesniais. "
-        "FP klientai dažniau turi teigiamą PAY_1 (vėlavimą) ir mažesnį limitą."
-    )
+    pdf.body(T["klaidos"])
     pdf.table(
         ["Klaida", "LIMIT_BAL", "AGE", "PAY_1", "BILL_AMT1", "PAY_AMT1"],
         [
@@ -453,7 +410,7 @@ def build() -> Path:
         ],
         [22, 32, 22, 22, 38, 38],
     )
-    pdf.caption("3 lentelė. Vidutiniai požymiai pagal TP/TN/FP/FN (testas, XGBoost, t = 0,175).")
+    pdf.caption(T["lentele3"])
     pdf.table(
         ["ID", "LIMIT_BAL", "AGE", "PAY_1", "p̂_cal", "tikra y"],
         [
@@ -482,12 +439,9 @@ def build() -> Path:
         ],
         [40, 78, 28, 28],
     )
-    pdf.caption("6 lentelė. XGBoost abliacija. Ši lentelė naudoja nekalibruotas tikimybes, kad lyginti požymių poveikį.")
+    pdf.caption(T["lentele6"])
     pdf.figure(extra["ablation"], "6 pav. PR-AUC pašalinus požymių grupes")
-    pdf.body(
-        "Mokėjimų būsenos yra svarbiausia grupė: be PAY_* PR-AUC krenta iki 0,446. "
-        "Demografijos pašalinimas pakeičia rezultatą nedaug."
-    )
+    pdf.body(T["abliacija"])
 
     pdf.add_page()
     pdf.h2("4.4. Atsparumas")
@@ -506,45 +460,32 @@ def build() -> Path:
         ],
         [62, 18, 24, 22, 22, 26],
     )
-    pdf.caption("7 lentelė. Tas pats XGBoost modelis, be pakartotinio mokymo.")
+    pdf.caption(T["lentele7"])
     pdf.figure(extra["robust"], "7 pav. Atsparumo bandymų PR-AUC")
-    pdf.body(
-        "Gauso triukšmas (σ = 0,15 · std) PR-AUC sumažina nuo 0,543 iki 0,487. "
-        "10 % atsitiktinai trūkstamų reikšmių poveikis mažesnis (0,527). "
-        "Amžiaus grupėje ≥ 50 diskriminacija išlieka, bet imtis mažesnė (n = 422)."
-    )
+    pdf.body(T["atsparumas"])
 
-    pdf.h1("5. Kodėl XGBoost laimėjo ir kokios ribos")
-    pdf.body(
-        "XGBoost pranoko logistinę regresiją, nes kredito vėlavimo istorija ir mokėjimų "
-        "sumos sąveikauja netiesiškai – tai medžiams natūralu, o logistinei regresijai "
-        "reikėtų rankinių narių. Random Forest artimas, bet gradientinis klaidų taisymas "
-        "čia davė nedidelį PR-AUC pranašumą. MLP nebuvo treniruotas šiame paleidime: "
-        "du intelektualūs metodai tenkina užduotį, o MLP jautresnis masteliui."
-    )
-    pdf.bullet(
-        [
-            "Duomenys surinkti Taivane 2005 m. – rezultatų negalima perkelti į dabartinę Lietuvos rinką.",
-            "Modelis neduoda priežastinio paaiškinimo ir neturi būti vienintelis kredito sprendimas.",
-            "Slenkstis priklauso nuo C_FN ir C_FP; kitos kainos duotų kitą t.",
-            "Isotonic kalibravimas p̂_cal keičia laiptais – panašūs balai gali gauti tą pačią tikimybę.",
-            "Klasių disbalansas (~22 %) daro accuracy klaidinančia metrika.",
-        ]
-    )
+    pdf.h1(T["kodel_lame_antrase"])
+    pdf.body(T["kodel_lame"])
+    pdf.bullet(T["ribos"])
 
     pdf.h1("6. Atkuriamumas")
     pdf.body(
         "Programinis kodas ir ataskaita: "
         "https://github.com/Meilaa/Kredito-sipareigojim-nevykdymo-rizikos-prognoz-"
     )
-    pdf.body("Atsitiktinė sėkla 42. Duomenys atsisiunčiami automatiniu būdu iš UCI (id=350). Viena komanda:")
+    pdf.body(T["atkuriamumas"])
     pdf.code("python run_experiment.py")
-    pdf.body("Svetainė ir Jupyter:")
-    pdf.code("streamlit run svetaine.py\njupyter notebook notebooks/egzamino_sprendimas.ipynb")
+    pdf.body("Rankinių algoritmų patikra su bibliotekomis, svetainė ir Jupyter:")
+    pdf.code(
+        "python scripts/patikra_rankiniai.py\n"
+        "streamlit run svetaine.py\n"
+        "jupyter notebook notebooks/egzamino_sprendimas.ipynb"
+    )
     pdf.body(
-        "Priklausomybės: requirements.txt. Projektas: src/ (duomenys, preprocessing, modeliai, "
-        "formulės, metrikos), artifacts/ (lentelės, grafikai, results.json). macOS XGBoost "
-        "gali reikalauti OpenMP: bash scripts/ensure_libomp.sh."
+        "Priklausomybės: requirements.txt. Projektas: src/ (duomenys, preprocessing, "
+        "rankiniai_modeliai su algoritmais, models mokymui, formulės, metrikos), "
+        "artifacts/ (lentelės, grafikai, results.json). Patikrai naudojamas xgboost macOS "
+        "aplinkoje gali reikalauti OpenMP: bash scripts/ensure_libomp.sh."
     )
 
     pdf.h1("7. AI naudojimo žurnalas")
@@ -558,23 +499,14 @@ def build() -> Path:
         [
             "Sukurti galutinio egzamino sprendimą pagal Word užduotį ir kolokviumo planą.",
             "Parodyti sprendimą svetainėje, įskaitant kodą.",
-            "Sudėti užduotį, dokumentaciją, grafikus ir lenteles į PDF.",
+            "Sudėti užduotį, dokumentaciją, grafikus ir lenteles į PDF ir Word.",
+            "Parašyti mokymo algoritmus rankiniu būdu, kad jų neatliktų biblioteka.",
         ]
     )
     pdf.h2("Priimta / atmesta")
-    pdf.body(
-        "Priimta: modulinė Python grandinė, XGBoost ir Random Forest, 70/15/15, Streamlit, "
-        "formulės src/formulas.py. Atmesta: tik Jupyter be svetainės; MLP kaip trečias metodas "
-        "šiame paleidime."
-    )
+    pdf.body(T["ai_priimta"])
     pdf.h2("Patikrintos AI klaidos")
-    pdf.bullet(
-        [
-            "ucimlrepo grąžino stulpelius X1–X23, ne LIMIT_BAL. Pirmas mokymas žlugo su 0 požymių. Pataisyta UCI_X_MAP, patikrinta pagal Yeh ir Lien aprašą.",
-            "pip install xgboost macOS nepaliko libomp.dylib. Patikra: import XGBClassifier po libomp įrašymo.",
-            "Straipsnio [2] PR-AUC ≈ 0,89 neperkeltina į šį UCI rinkinį – DOI patikrintas, metrikos imamos tik iš run_experiment.py.",
-        ]
-    )
+    pdf.bullet(T["ai_klaidos"])
 
     pdf.h1("8. Literatūra")
     pdf.body(
@@ -606,3 +538,7 @@ def build() -> Path:
 if __name__ == "__main__":
     path = build()
     print(f"PDF įrašytas: {path}")
+    from make_word_report import build as build_docx
+
+    docx_path = build_docx()
+    print(f"Word įrašytas: {docx_path}")

@@ -159,7 +159,13 @@ def run_experiment(seed: int = RANDOM_SEED, c_fn: float = C_FN, c_fp: float = C_
                 "FN": cal["FN"],
             }
         )
-    summary = pd.DataFrame(rows).sort_values("pr_auc", ascending=False).reset_index(drop=True)
+    # Laimėtojas renkamas TIK pagal validavimo PR-AUC. Testas naudojamas vieną kartą –
+    # galutiniam įverčiui, todėl jis negali dalyvauti modelio atrankoje.
+    summary = (
+        pd.DataFrame(rows)
+        .sort_values("val_pr_auc_for_selection", ascending=False)
+        .reset_index(drop=True)
+    )
     winner_name = str(summary.iloc[0]["model"])
     winner = models[winner_name]
     winner_t = thresholds[winner_name]
@@ -256,16 +262,22 @@ def run_experiment(seed: int = RANDOM_SEED, c_fn: float = C_FN, c_fp: float = C_
         "fn_examples": errors["false_negative"].to_dict(orient="records"),
         "fp_examples": errors["false_positive"].to_dict(orient="records"),
         "plot_paths": plot_paths,
+        "winner_selected_by": "validavimo PR-AUC (testas naudojamas tik galutiniam įverčiui)",
         "hypothesis": (
-            "XGBoost dėl netiesinių ryšių ir požymių sąveikų turėtų pranokti "
-            "logistinę regresiją pagal PR-AUC, išlaikant priimtiną kalibraciją po kalibravimo."
+            "Rankiniu būdu parašytas XGBoost tipo gradientinis boostingas dėl netiesinių "
+            "ryšių ir požymių sąveikų turėtų pranokti logistinę regresiją pagal PR-AUC, "
+            "išlaikant priimtiną kalibraciją po kalibravimo."
         ),
     }
     _dump_json(ARTIFACTS_DIR / "results.json", payload)
 
     print("Eksperimentas baigtas.")
-    print(summary[["model", "pr_auc", "brier", "ece", "cost", "threshold"]].to_string(index=False))
-    print(f"Laimėtojas pagal PR-AUC: {winner_name}")
+    print(
+        summary[
+            ["model", "val_pr_auc_for_selection", "pr_auc", "brier", "ece", "cost", "threshold"]
+        ].to_string(index=False)
+    )
+    print(f"Laimėtojas pagal VALIDAVIMO PR-AUC: {winner_name}")
     print(f"Formulės ir sklearn tikimybių maks. skirtumas: {formula_check['max_abs_diff']:.2e}")
     return payload
 

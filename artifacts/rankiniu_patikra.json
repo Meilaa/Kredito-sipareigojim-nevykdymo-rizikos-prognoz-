@@ -1,0 +1,36 @@
+{
+  "paaiskinimas": "Eksperimente naudojami tik rankiniai modeliai. Ši lentelė yra patikra: tie patys paruošti duomenys paduoti ir bibliotekoms, palygintos validavimo imties metrikos.",
+  "eilutes": [
+    {
+      "modelis": "Logistinė regresija",
+      "rankinis": "Newton–Raphson (src/rankiniai_modeliai.py)",
+      "biblioteka": "sklearn LogisticRegression (lbfgs)",
+      "pr_auc_rankinis": 0.5232370147329692,
+      "pr_auc_biblioteka": 0.523220265123303,
+      "maks_tikimybiu_skirtumas": 0.0030399835352776794,
+      "koeficientu_skirtumas": 0.012647421195711717,
+      "sekundes_rankinis": 0.01223444938659668,
+      "sekundes_biblioteka": 0.046751976013183594
+    },
+    {
+      "modelis": "XGBoost",
+      "rankinis": "g, h ir w = -ΣG/(ΣH+λ) (src/rankiniai_modeliai.py)",
+      "biblioteka": "xgboost XGBClassifier (hist)",
+      "pr_auc_rankinis": 0.5651255887216126,
+      "pr_auc_biblioteka": 0.5680265537040708,
+      "tikimybiu_koreliacija": 0.9961772065704986,
+      "sekundes_rankinis": 2.9205989837646484,
+      "sekundes_biblioteka": 0.21392607688903809
+    },
+    {
+      "modelis": "Random Forest",
+      "rankinis": "bootstrap + Gini (src/rankiniai_modeliai.py)",
+      "biblioteka": "sklearn RandomForestClassifier",
+      "pr_auc_rankinis": 0.5606423119590705,
+      "pr_auc_biblioteka": 0.5620270756775465,
+      "tikimybiu_koreliacija": 0.9966080521265986,
+      "sekundes_rankinis": 5.5168070793151855,
+      "sekundes_biblioteka": 0.5732150077819824
+    }
+  ]
+}
